@@ -52,9 +52,10 @@ streamlit run dashboard.py
 ```
 The interactive visualization panel will open automatically inside your browser at: http://localhost:8501
 
-Core Engineering Frameworks Demonstrated
+### Core Engineering Frameworks Demonstrated
 
 State Machine Management: Programmatically handles conditional transaction routing to prevent race conditions during wallet state updates.
+
 Fintech Compliance Safety Loops: Demonstrates how to preserve structural corporate capital floats and manage ledger security without degrading consumer-facing design aesthetics.
 
 Decoupled System Modeling: Built entirely using asynchronous patterns to match the requirements of highly scalable financial technology platforms processing massive daily transaction pipelines.
