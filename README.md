@@ -1,6 +1,8 @@
-# 🛡️ Subspace.money — Trust Shield & Instant AI Refund Prototype
+# Subspace.money — Trust Shield & Instant AI Refund Prototype
 
 > Working code prototypes for the Subspace.money product management teardown assignment.
+
+An interactive software engineering prototype developed as a core technical deliverable for the Subspace.money Product Internship Assignment (May 2026). This repository moves beyond abstract product concepts to deliver working, production-ready backend architectures and user interfaces built to solve structural friction loops identified within the live application.
 
 This repository implements **two core product features** identified in the teardown report:
 
