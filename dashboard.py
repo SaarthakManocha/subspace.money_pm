@@ -2,7 +2,7 @@
 dashboard.py — Streamlit Visual Interactive UI for Subspace.money Prototypes
 =============================================================================
 
-Renders two core experiences:
+Renders three core experiences:
 
 1. **Trust Shield Dashboard**
    Consolidated wallet view with a visual progress bar for escrowed
@@ -13,6 +13,11 @@ Renders two core experiences:
    One-click button that creates a failed checkout, disputes it, and
    visually demonstrates the provisional credit appearing in the wallet
    in real time.
+
+3. **AI Subscription Audit**
+   Scans the user's financial footprint to detect active retail
+   subscriptions, shows potential savings via Subspace group splits,
+   and lets users optimize each subscription with a single click.
 
 Run (after starting the FastAPI backend on port 8000):
     streamlit run dashboard.py
