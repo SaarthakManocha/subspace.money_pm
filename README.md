@@ -6,9 +6,9 @@ An interactive software engineering prototype developed as a core technical deli
 
 The code base implements a decoupled, full-stack architecture designed to demonstrate the technical feasibility and product mechanics of two high-leverage product iterations:
 
-├── main.py          # FastAPI High-Performance Backend Core
-├── dashboard.py     # Streamlit Visual Experience UI Layer
-└── requirements.txt # System Dependency Manifest
+1) main.py          # FastAPI High-Performance Backend Core
+2) dashboard.py     # Streamlit Visual Experience UI Layer
+3) requirements.txt # System Dependency Manifest
 
 
 ### 1. The "Trust Shield" Interface Abstraction Layer
