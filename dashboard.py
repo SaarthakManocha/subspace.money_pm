@@ -178,9 +178,10 @@ with st.sidebar:
     st.markdown("##### Trust Shield Prototype")
     st.divider()
     st.markdown(
-        "This dashboard demonstrates two product features:\n\n"
+        "This dashboard demonstrates three product features:\n\n"
         "1. **Trust Shield** — consolidated ledger with protected-balance UX.\n"
-        "2. **Instant AI Refund** — one-click provisional credit engine."
+        "2. **Instant AI Refund** — one-click provisional credit engine.\n"
+        "3. **Subscription Audit** — AI-powered savings finder."
     )
     st.divider()
     st.caption("Backend: FastAPI · Frontend: Streamlit")
@@ -401,6 +402,113 @@ with st.expander("🧪 Manual Direct-Route Checkout Demo"):
         })
         if result:
             st.json(result)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# AI Subscription Audit Section
+# ─────────────────────────────────────────────────────────────────────
+
+st.markdown("---")
+st.markdown("## 🔍 One-Click AI Subscription Audit")
+st.markdown(
+    "Let our AI scan your financial footprint — bank statements, UPI autopay "
+    "mandates, and SMS alerts — to find subscriptions where you're **overpaying "
+    "retail** instead of using Subspace group splits."
+)
+
+# Initialise session state for audit results.
+if "audit_data" not in st.session_state:
+    st.session_state.audit_data = None
+
+run_audit = st.button(
+    "🔎 Run Financial Audit",
+    type="primary",
+    use_container_width=True,
+)
+
+if run_audit:
+    with st.spinner("🤖 AI scanning your financial footprint…"):
+        time.sleep(1.0)  # visual delay
+        result = api_post("/subscriptions/audit", {})
+        if result:
+            st.session_state.audit_data = result
+
+# ── Display audit results if available ───────────────────────────────
+audit = st.session_state.audit_data
+
+if audit:
+    st.markdown("")
+
+    # ── Summary metrics ──────────────────────────────────────────────
+    st.info(f"📊 **{audit['scan_summary']}**")
+
+    sa1, sa2, sa3 = st.columns(3)
+    with sa1:
+        st.metric(
+            label="Current Monthly Spend",
+            value=f"₹{audit['total_retail_spend']:,.2f}",
+        )
+    with sa2:
+        st.metric(
+            label="Optimized Spend via Subspace",
+            value=f"₹{audit['total_optimized_spend']:,.2f}",
+        )
+    with sa3:
+        st.metric(
+            label="💰 You Could Save / Year",
+            value=f"₹{audit['total_annual_savings']:,.2f}",
+            delta=f"₹{audit['total_monthly_savings']:,.2f}/month",
+        )
+
+    st.markdown("")
+    st.markdown("### Detected Subscriptions")
+
+    # ── Per-subscription cards with Optimize buttons ─────────────────
+    for idx, sub in enumerate(audit["subscriptions"]):
+        with st.container():
+            s1, s2, s3, s4, s5 = st.columns([0.5, 2, 1.5, 1.5, 1.5])
+
+            with s1:
+                st.markdown(f"### {sub['icon_emoji']}")
+
+            with s2:
+                st.markdown(f"**{sub['service_name']}**")
+                st.caption(f"{sub['category']} · {sub['billing_cycle']} · via {sub['detected_via']}")
+
+            with s3:
+                st.metric(
+                    label="Retail Price",
+                    value=f"₹{sub['retail_price']:,.0f}",
+                )
+
+            with s4:
+                st.metric(
+                    label="Subspace Price",
+                    value=f"₹{sub['subspace_split_price']:,.0f}",
+                    delta=f"-₹{sub['monthly_savings']:,.0f} ({sub['savings_pct']}%)",
+                )
+
+            with s5:
+                if sub["is_optimized"]:
+                    st.success("✅ Optimized", icon="✅")
+                else:
+                    if st.button(
+                        "⚡ Optimize",
+                        key=f"opt_{sub['sub_id']}_{idx}",
+                        use_container_width=True,
+                    ):
+                        opt_result = api_post("/subscriptions/optimize", {
+                            "sub_id": sub["sub_id"],
+                        })
+                        if opt_result:
+                            st.success(opt_result["message"])
+                            # Refresh audit data to reflect the change.
+                            refreshed = api_post("/subscriptions/audit", {})
+                            if refreshed:
+                                st.session_state.audit_data = refreshed
+                                st.rerun()
+
+            st.divider()
 
 
 # ─────────────────────────────────────────────────────────────────────

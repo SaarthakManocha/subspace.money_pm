@@ -2,7 +2,7 @@
 main.py — FastAPI Backend Engine for Subspace.money Feature Prototypes
 ======================================================================
 
-Implements two core product features from the Subspace teardown report:
+Implements three core product features from the Subspace teardown report:
 
 1. **Trust Shield Ledger Layer**
    Abstracts complex locked/unlocked escrow balances into a single,
@@ -13,6 +13,11 @@ Implements two core product features from the Subspace teardown report:
    Automates dispute resolution by scanning transactional logs for gateway
    errors and issuing 48-hour cryptographically bank-locked wallet credits
    that are spendable but not withdrawable until the lock window expires.
+
+3. **One-Click AI Subscription Audit**
+   Parses a user's financial footprint to detect active retail subscriptions,
+   calculates potential savings via Subspace group-split pooling, and lets
+   users migrate subscriptions into optimised pools with a single click.
 
 Run:
     uvicorn main:app --reload --port 8000
@@ -37,12 +42,13 @@ from pydantic import BaseModel, Field
 # ─────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="Subspace.money — Trust Shield & Provisional Refund Engine",
+    title="Subspace.money — Trust Shield, AI Refund & Subscription Audit",
     description=(
         "Working prototype backend powering the Trust Shield consolidated "
-        "ledger and the Instant Provisional AI Refund mechanism."
+        "ledger, the Instant Provisional AI Refund mechanism, and the "
+        "One-Click AI Subscription Audit tool."
     ),
-    version="1.0.0",
+    version="2.0.0",
 )
 
 # Allow the Streamlit frontend (default port 8501) to call the API.
@@ -74,6 +80,69 @@ _transactions: dict[str, dict] = {}
 
 # Global log of AI audit events for transparency.
 _audit_log: list[dict] = []
+
+# ── Mock Subscription Database ───────────────────────────────────────
+# Simulates subscriptions detected from a user's bank/SMS financial
+# footprint.  Each entry represents a real subscription the user is
+# paying full retail price for that *could* be split via Subspace.
+
+_detected_subscriptions: list[dict] = [
+    {
+        "sub_id": "SUB-NETFLIX-001",
+        "service_name": "Netflix Premium",
+        "category": "Streaming",
+        "icon_emoji": "🎬",
+        "retail_price": 649.00,
+        "subspace_split_price": 163.00,
+        "billing_cycle": "monthly",
+        "detected_via": "UPI autopay mandate",
+        "is_optimized": False,
+    },
+    {
+        "sub_id": "SUB-YTPREM-002",
+        "service_name": "YouTube Premium",
+        "category": "Streaming",
+        "icon_emoji": "▶️",
+        "retail_price": 149.00,
+        "subspace_split_price": 53.00,
+        "billing_cycle": "monthly",
+        "detected_via": "bank statement pattern",
+        "is_optimized": False,
+    },
+    {
+        "sub_id": "SUB-SPOTIFY-003",
+        "service_name": "Spotify Premium",
+        "category": "Music",
+        "icon_emoji": "🎵",
+        "retail_price": 119.00,
+        "subspace_split_price": 35.00,
+        "billing_cycle": "monthly",
+        "detected_via": "SMS transaction alert",
+        "is_optimized": False,
+    },
+    {
+        "sub_id": "SUB-ICLOUD-004",
+        "service_name": "iCloud+ 200GB",
+        "category": "Cloud Storage",
+        "icon_emoji": "☁️",
+        "retail_price": 219.00,
+        "subspace_split_price": 75.00,
+        "billing_cycle": "monthly",
+        "detected_via": "UPI autopay mandate",
+        "is_optimized": False,
+    },
+    {
+        "sub_id": "SUB-LINKEDIN-005",
+        "service_name": "LinkedIn Premium",
+        "category": "Professional",
+        "icon_emoji": "💼",
+        "retail_price": 1999.00,
+        "subspace_split_price": 514.00,
+        "billing_cycle": "monthly",
+        "detected_via": "bank statement pattern",
+        "is_optimized": False,
+    },
+]
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -175,6 +244,51 @@ class DisputeResponse(BaseModel):
     gateway_error_detected: Optional[GatewayErrorType]
     provisional_credit: Optional[ProvisionalCreditDetail]
     audit_log_entry: dict
+    message: str
+
+
+# ── Subscription Audit Schemas ───────────────────────────────────────
+
+class DetectedSubscription(BaseModel):
+    """A single subscription detected from the user's financial footprint."""
+    sub_id: str
+    service_name: str
+    category: str
+    icon_emoji: str
+    retail_price: float                 # what the user currently pays
+    subspace_split_price: float         # what they'd pay via Subspace pool
+    monthly_savings: float              # retail − split
+    savings_pct: float                  # percentage saved
+    billing_cycle: str
+    detected_via: str                   # how the AI found this subscription
+    is_optimized: bool                  # already routed through Subspace?
+
+
+class SubscriptionAuditResponse(BaseModel):
+    """Result of the AI subscription financial footprint scan."""
+    user_id: str
+    total_retail_spend: float           # current monthly total
+    total_optimized_spend: float        # projected total via Subspace
+    total_monthly_savings: float
+    total_annual_savings: float
+    subscriptions: list[DetectedSubscription]
+    scan_summary: str
+    scanned_at: str
+
+
+class OptimizeRequest(BaseModel):
+    """Payload to migrate a subscription into a Subspace pool."""
+    sub_id: str = Field(..., description="ID of the subscription to optimize")
+
+
+class OptimizeResponse(BaseModel):
+    """Confirmation of a successful subscription optimization."""
+    sub_id: str
+    service_name: str
+    previous_price: float
+    new_price: float
+    monthly_savings: float
+    pool_id: str                        # the Subspace pool it was routed to
     message: str
 
 
@@ -516,6 +630,149 @@ async def wallet_balance() -> WalletBalanceResponse:
         total_balance=round(total, 2),
         trust_shield_status=shield_status,
         last_updated=now.isoformat(),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Endpoint 4 — AI Subscription Audit
+# ─────────────────────────────────────────────────────────────────────
+
+@app.post(
+    "/subscriptions/audit",
+    response_model=SubscriptionAuditResponse,
+    tags=["Subscriptions"],
+    summary="AI-powered scan of the user's financial footprint for active subscriptions",
+)
+async def subscription_audit() -> SubscriptionAuditResponse:
+    """
+    **One-Click AI Subscription Audit**
+
+    Simulates parsing the user's bank statements, UPI autopay mandates,
+    and SMS transaction alerts to detect active retail subscriptions.
+
+    For each detected subscription, the response includes:
+    - Current retail price the user is paying
+    - Proposed Subspace group-split price
+    - Monthly and percentage savings
+
+    In production this would integrate with Account Aggregator (AA)
+    APIs and SMS parsing pipelines.
+    """
+    now = _now()
+
+    subs_out: list[DetectedSubscription] = []
+    total_retail = 0.0
+    total_optimized = 0.0
+
+    for sub in _detected_subscriptions:
+        savings = round(sub["retail_price"] - sub["subspace_split_price"], 2)
+        savings_pct = round((savings / sub["retail_price"]) * 100, 1)
+
+        # If already optimized, the user is paying the split price.
+        current_retail = sub["subspace_split_price"] if sub["is_optimized"] else sub["retail_price"]
+        total_retail += current_retail
+        total_optimized += sub["subspace_split_price"]
+
+        subs_out.append(DetectedSubscription(
+            sub_id=sub["sub_id"],
+            service_name=sub["service_name"],
+            category=sub["category"],
+            icon_emoji=sub["icon_emoji"],
+            retail_price=sub["retail_price"],
+            subspace_split_price=sub["subspace_split_price"],
+            monthly_savings=savings,
+            savings_pct=savings_pct,
+            billing_cycle=sub["billing_cycle"],
+            detected_via=sub["detected_via"],
+            is_optimized=sub["is_optimized"],
+        ))
+
+    total_monthly_savings = round(total_retail - total_optimized, 2)
+    total_annual_savings = round(total_monthly_savings * 12, 2)
+
+    optimized_count = sum(1 for s in _detected_subscriptions if s["is_optimized"])
+    remaining = len(_detected_subscriptions) - optimized_count
+
+    scan_summary = (
+        f"Detected {len(_detected_subscriptions)} active subscriptions. "
+        f"{optimized_count} already optimized via Subspace, "
+        f"{remaining} can still be optimized to save ₹{total_monthly_savings:,.2f}/month "
+        f"(₹{total_annual_savings:,.2f}/year)."
+    )
+
+    return SubscriptionAuditResponse(
+        user_id=_wallet["user_id"],
+        total_retail_spend=round(total_retail, 2),
+        total_optimized_spend=round(total_optimized, 2),
+        total_monthly_savings=total_monthly_savings,
+        total_annual_savings=total_annual_savings,
+        subscriptions=subs_out,
+        scan_summary=scan_summary,
+        scanned_at=now.isoformat(),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Endpoint 5 — Optimize Subscription (Route to Subspace Pool)
+# ─────────────────────────────────────────────────────────────────────
+
+@app.post(
+    "/subscriptions/optimize",
+    response_model=OptimizeResponse,
+    tags=["Subscriptions"],
+    summary="Route a detected subscription into a Subspace group-split pool",
+)
+async def subscription_optimize(payload: OptimizeRequest) -> OptimizeResponse:
+    """
+    **One-Click Subscription Optimization**
+
+    Takes a detected subscription ID and simulates migrating it into
+    a Subspace group-split pool.  The user immediately starts paying
+    the lower split price instead of full retail.
+
+    In production this would:
+    1. Cancel or modify the user's existing UPI autopay mandate.
+    2. Enroll them into a Subspace-managed family/group plan.
+    3. Set up a new split-amount autopay for their share.
+    """
+    # Find the subscription in the mock database.
+    target = None
+    for sub in _detected_subscriptions:
+        if sub["sub_id"] == payload.sub_id:
+            target = sub
+            break
+
+    if not target:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Subscription {payload.sub_id} not found.",
+        )
+
+    if target["is_optimized"]:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{target['service_name']} is already optimized via Subspace.",
+        )
+
+    # Mark as optimized.
+    target["is_optimized"] = True
+
+    # Generate a pool ID.
+    pool_id = f"POOL-{uuid.uuid4().hex[:8].upper()}"
+
+    savings = round(target["retail_price"] - target["subspace_split_price"], 2)
+
+    return OptimizeResponse(
+        sub_id=target["sub_id"],
+        service_name=target["service_name"],
+        previous_price=target["retail_price"],
+        new_price=target["subspace_split_price"],
+        monthly_savings=savings,
+        pool_id=pool_id,
+        message=(
+            f"Successfully routed {target['service_name']} to Subspace pool "
+            f"{pool_id}. You are now saving ₹{savings:,.2f}/month."
+        ),
     )
 
 
